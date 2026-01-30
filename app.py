@@ -3,14 +3,15 @@ import pandas as pd
 from pymongo import MongoClient
 from datetime import datetime, date, timedelta
 import uuid
+
 from streamlit_cookies_manager import EncryptedCookieManager
 
-pd.set_option("future.no_silent_downcasting", True)
+pd.set_option('future.no_silent_downcasting', True)
 
 # -------------------- COOKIES --------------------
 cookies = EncryptedCookieManager(
-    prefix="work_logger",
-    password=st.secrets["COOKIE_PASSWORD"],
+    prefix="work_auth",
+    password=st.secrets["COOKIE_PASSWORD"]  # YOU set this
 )
 
 if not cookies.ready():
@@ -22,26 +23,26 @@ db = client["infoDB"]
 weekly_col = db["Log_In"]
 allowed_devices = db["allowed_devices"]
 
-# -------------------- DEVICE AUTH (PERMANENT) --------------------
+# -------------------- DEVICE AUTH --------------------
 def get_device_id():
     if "device_id" not in cookies:
         cookies["device_id"] = str(uuid.uuid4())
         cookies.save()
-
     return cookies["device_id"]
 
 def is_device_allowed(device_id):
     return bool(
-        allowed_devices.find_one(
-            {"device_id": device_id, "active": True}
-        )
+        allowed_devices.find_one({
+            "device_id": device_id,
+            "active": True
+        })
     )
 
 device_id = get_device_id()
 
 if not is_device_allowed(device_id):
     st.error("This computer is not authorized to access this system.")
-    st.info("Provide the following ID to the administrator to enable access:")
+    st.info("Provide the following ID to the administrator:")
     st.code(device_id)
     st.stop()
 
@@ -114,9 +115,3 @@ if st.button("Sign Out"):
         st.success("You are signed out.")
 
 st.caption(f"Device ID: {device_id}")
-
-st.markdown("-----")
-st.markdown(
-    "If you have trouble logging in or out or would like to report any bugs, "
-    "feel free to contact the lead developer at: pranat32@gmail.com"
-)
