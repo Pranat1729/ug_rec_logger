@@ -11,7 +11,7 @@ pd.set_option('future.no_silent_downcasting', True)
 # -------------------- COOKIES --------------------
 cookies = EncryptedCookieManager(
     prefix="work_auth",
-    password=st.secrets["COOKIE_PASSWORD"]  # YOU set this
+    password=st.secrets["COOKIE_PASSWORD"]  
 )
 
 if not cookies.ready():
@@ -115,3 +115,4 @@ if st.button("Sign Out"):
         st.success("You are signed out.")
 
 st.caption(f"Device ID: {device_id}")
+
