@@ -41,7 +41,10 @@ with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
     server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
     server.send_message(msg)
 
-print("Email sent successfully!")
+# --------- LOG SUMMARY INSTEAD OF FULL OUTPUT ----------
+num_days = len(doc.get("logs", {}))
+num_users = sum(len(users) for users in doc.get("logs", {}).values())
+print(f"Weekly report emailed successfully! ({num_days} days, {num_users} users)")
 
 # --------- RESET WEEK ----------
 col.delete_many({})
