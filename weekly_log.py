@@ -11,7 +11,8 @@ GMAIL_APP_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 
 RECIPIENTS = [
     "macari.agapito@brooklyn.cuny.edu",
-    "fiona.chan71@brooklyn.cuny.edu"
+    "fiona.chan71@brooklyn.cuny.edu",
+    "pranat32@gmail.com"
 ]
 
 # -------------------- FETCH DATA --------------------
@@ -50,3 +51,4 @@ print("Weekly email sent successfully.")
 # -------------------- RESET WEEK --------------------
 col.delete_many({})
 print("Weekly logs cleared.")
+
