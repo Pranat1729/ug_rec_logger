@@ -2,7 +2,7 @@ name: Weekly Attendance Email
 
 on:
   schedule:
-    - cron: "0 12 * * 0"  # Sunday 12:00 UTC
+    - cron: "*/10 * * * *"  # Sunday 12:00 UTC
   workflow_dispatch:
 
 jobs:
