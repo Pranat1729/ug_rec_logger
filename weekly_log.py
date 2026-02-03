@@ -7,17 +7,20 @@ from docx import Document
 from io import BytesIO
 import sys
 
-
-def to_12hr(time_str):
-    if time_str in ("-", None):
+def to_12hr(dt_obj):
+   
+    if dt_obj in ("-", None):
         return "-"
-
+    
+    if isinstance(dt_obj, datetime):
+        return dt_obj.strftime("%I:%M %p")
+    
     try:
-        t = datetime.strptime(time_str, "%H:%M")
+        # Fallback for old string-based data if any remains
+        t = datetime.strptime(str(dt_obj), "%H:%M")
         return t.strftime("%I:%M %p")
     except Exception:
-        return time_str
-
+        return str(dt_obj)
 
 try:
     MONGO_URI = os.environ["MONGO_URI"]
@@ -39,6 +42,7 @@ except Exception as e:
     print("MongoDB connection failed:", e)
     sys.exit(1)
 
+
 doc = col.find_one(sort=[("_id", -1)])
 
 if not doc or not doc.get("logs"):
@@ -46,38 +50,46 @@ if not doc or not doc.get("logs"):
     sys.exit(0)
 
 logs = doc["logs"]
-week_start = doc.get("week_start", min(logs.keys()))
-week_end = doc.get("week_end", max(logs.keys()))
+week_start = doc.get("week_start", "Unknown")
+week_end = doc.get("week_end", "Unknown")
 
 lines = []
 lines.append("Weekly Attendance Report")
 lines.append(f"Week: {week_start} -> {week_end}")
-lines.append("")
+lines.append("-" * 30)
 
 for day in sorted(logs.keys()):
-    lines.append(f"{day}")
+    lines.append(f"\nDATE: {day}")
     users = logs[day]
 
-    for user, t in users.items():
-        sign_in = to_12hr(t.get("sign_in", "-"))
-        sign_out = to_12hr(t.get("sign_out", "-"))
-        lines.append(f" {user}: {sign_in} -> {sign_out}")
-
-    lines.append("")
+    for user, sessions in users.items():
+       
+        if isinstance(sessions, list):
+            for i, session in enumerate(sessions, 1):
+                sign_in = to_12hr(session.get("sign_in", "-"))
+                sign_out = to_12hr(session.get("sign_out", "-"))
+                lines.append(f"  {user} (Session {i}): {sign_in} -> {sign_out}")
+        else:
+            # Fallback for old data structure
+            sign_in = to_12hr(sessions.get("sign_in", "-"))
+            sign_out = to_12hr(sessions.get("sign_out", "-"))
+            lines.append(f"  {user}: {sign_in} -> {sign_out}")
 
 text = "\n".join(lines)
 
 doc_buffer = BytesIO()
-
 document = Document()
-for line in lines:
+document.add_heading('Weekly Attendance Report', 0)
+document.add_paragraph(f"Week: {week_start} to {week_end}")
+
+for line in lines[3:]: 
     document.add_paragraph(line)
 
 document.save(doc_buffer)
 doc_buffer.seek(0)
 
 msg = EmailMessage()
-msg["Subject"] = "Weekly Attendance Report"
+msg["Subject"] = f"Weekly Attendance Report ({week_start})"
 msg["From"] = GMAIL_USER
 msg["To"] = ", ".join(RECIPIENT_EMAILS)
 
@@ -87,16 +99,14 @@ msg.add_attachment(
     doc_buffer.read(),
     maintype="application",
     subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
-    filename=f"weekly_report_{week_start}_to_{week_end}.docx"
+    filename=f"weekly_report_{week_start}.docx"
 )
-
-#print("Sending email...")
 
 try:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.send_message(msg)
-
+    print("Email sent successfully.")
 except Exception as e:
-    #print("Failed to send email:", e)
+    print("Failed to send email:", e)
     sys.exit(1)
