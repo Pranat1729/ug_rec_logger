@@ -1,54 +1,92 @@
-import smtplib
-from email.message import EmailMessage
+import os
 from pymongo import MongoClient
-from datetime import date
+from datetime import datetime
+from email.message import EmailMessage
+import smtplib
+from docx import Document
 
+# ==========================
+# CONFIGURATION
+# ==========================
+MONGO_URI = os.environ['MONGO_URI']
+DB_NAME = os.environ.get('DB_NAME')
+COLLECTION_NAME = os.environ.get("COLLECTION_NAME")
 
-# -------------------- CONFIG --------------------
-MONGO_URI = st.secrets["API_KEY"]
-GMAIL_USER = st.secrets["EMAIL_ADDRESS"]
-GMAIL_APP_PASSWORD = st.secrets["EMAIL_PASSWORD"]
+GMAIL_USER = os.environ['GMAIL_USER']
+GMAIL_APP_PASSWORD = os.environ['GMAIL_APP_PASSWORD']
+RECIPIENT_EMAILS = os.environ['RECIPIENT_EMAILS'].split(",")
+LOG_FILE = "weekly_report.log"
+DOCX_FILE = "weekly_report.docx"
 
-RECIPIENTS = [
-    "macari.agapito@brooklyn.cuny.edu",
-    "fiona.chan71@brooklyn.cuny.edu",
-    "pranat32@gmail.com"
-]
-
-# -------------------- FETCH DATA --------------------
+# ==========================
+# CONNECT TO MONGO
+# ==========================
 client = MongoClient(MONGO_URI)
-db = client["infoDB"]
-col = db["Log_In"]
+db = client[DB_NAME]
+col = db[COLLECTION_NAME]
 
-doc = col.find_one({})
-if not doc:
-    print("No weekly document found.")
+# Get the latest weekly document
+doc = col.find_one(sort=[("_id", -1)])
+
+if not doc or not doc.get("logs"):
+    print("No logs found. Exiting.")
     exit()
 
-# -------------------- FORMAT EMAIL --------------------
-text = f"Weekly Attendance Report\n"
-text += f"Week: {doc['week_start']} → {doc['week_end']}\n\n"
+logs = doc["logs"]
+week_start = doc.get("week_start", min(logs.keys()))
+week_end = doc.get("week_end", max(logs.keys()))
 
-for day, users in doc["logs"].items():
-    text += f"{day}\n"
+# ==========================
+# BUILD REPORT TEXT
+# ==========================
+lines = []
+lines.append(f"Weekly Attendance Report")
+lines.append(f"Week: {week_start} -> {week_end}\n")  # ASCII arrow
+
+for day in sorted(logs.keys()):
+    lines.append(f"{day}")
+    users = logs[day]
     for user, t in users.items():
-        text += f"  {user}: {t.get('sign_in','—')} → {t.get('sign_out','—')}\n"
-    text += "\n"
+        lines.append(f"  {user}: {t.get('sign_in','-')} -> {t.get('sign_out','-')}")
+    lines.append("")  # empty line
 
-# -------------------- SEND EMAIL --------------------
+text = "\n".join(lines)
+
+# ==========================
+# WRITE DOCX
+# ==========================
+document = Document()
+for line in lines:
+    document.add_paragraph(line)
+document.save(DOCX_FILE)
+#print(f"DOCX created: {DOCX_FILE}")
+
+# ==========================
+# SEND EMAIL VIA GMAIL SMTP
+# ==========================
 msg = EmailMessage()
 msg["Subject"] = "Weekly Attendance Report"
 msg["From"] = GMAIL_USER
-msg["To"] = ", ".join(RECIPIENTS)
+msg["To"] = ", ".join(RECIPIENT_EMAILS)
 msg.set_content(text)
 
-with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-    smtp.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-    smtp.send_message(msg)
+# Attach DOCX
+with open(DOCX_FILE, "rb") as f:
+    msg.add_attachment(f.read(), maintype="application", subtype="vnd.openxmlformats-officedocument.wordprocessingml.document", filename=DOCX_FILE)
 
-print("Weekly email sent successfully.")
+try:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.send_message(msg)
+    #print("Email sent successfully with DOCX attachment!")
+except Exception as e:
+    #print("Failed to send email:", e)
 
-# -------------------- RESET WEEK --------------------
-col.delete_many({})
-print("Weekly logs cleared.")
-
+# ==========================
+# OPTIONAL LOGGING
+# ==========================
+try:
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{datetime.now()}: Weekly report sent for {week_start} -> {week_end}\n")
+except Exception as e:
+    #print("Failed to write log:", e)
