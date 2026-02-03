@@ -20,10 +20,14 @@ if not cookies.ready():
 # -------------------- MongoDB --------------------
 client = MongoClient(st.secrets["API_KEY"])
 db = client["infoDB"]
+users_col = db["users"]
 weekly_col = db["Log_In"]
 allowed_devices = db["allowed_devices"]
 
 # -------------------- DEVICE AUTH --------------------
+def user_exists(username):
+    return bool(users_col.find_one({"username": username}))
+    
 def get_device_id():
     if "device_id" not in cookies:
         cookies["device_id"] = str(uuid.uuid4())
@@ -101,18 +105,28 @@ username = st.text_input("Username")
 if st.button("Sign In"):
     if not username:
         st.warning("Enter a valid username.")
+    elif not user_exists(username):           
+        st.error("User not found in system.")
     elif already_signed_in(username):
         st.warning("You are already signed in!")
     else:
         sign_in(username)
         st.success("You are signed in.")
 
+
 if st.button("Sign Out"):
     if not username:
         st.warning("Enter a valid username.")
+    elif not user_exists(username):           
+        st.error("User not found in system.")
     else:
         sign_out(username)
         st.success("You are signed out.")
 
 st.caption(f"Device ID: {device_id}")
+
+st.markdown("------")
+st.markdown("If you have any trouble logging in or out, or would like to report any bugs. Reach out to the lead developer at: pranat32@gmail.com")
+
+
 
