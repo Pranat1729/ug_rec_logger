@@ -3,7 +3,6 @@ import pandas as pd
 from pymongo import MongoClient
 from datetime import datetime, date, timedelta
 import uuid
-
 from streamlit_cookies_manager import EncryptedCookieManager
 
 pd.set_option('future.no_silent_downcasting', True)
@@ -11,7 +10,7 @@ pd.set_option('future.no_silent_downcasting', True)
 # -------------------- COOKIES --------------------
 cookies = EncryptedCookieManager(
     prefix="work_auth",
-    password=st.secrets["COOKIE_PASSWORD"]  
+    password=st.secrets["COOKIE_PASSWORD"] 
 )
 
 if not cookies.ready():
@@ -20,14 +19,17 @@ if not cookies.ready():
 # -------------------- MongoDB --------------------
 client = MongoClient(st.secrets["API_KEY"])
 db = client["infoDB"]
-users_col = db["users"]
+
+users_col = db["users"]          
 weekly_col = db["Log_In"]
 allowed_devices = db["allowed_devices"]
 
-# -------------------- DEVICE AUTH --------------------
+# -------------------- NEW HELPER --------------------
 def user_exists(username):
+    """Check if username exists in users collection."""
     return bool(users_col.find_one({"username": username}))
-    
+
+# -------------------- DEVICE AUTH --------------------
 def get_device_id():
     if "device_id" not in cookies:
         cookies["device_id"] = str(uuid.uuid4())
@@ -69,45 +71,31 @@ def ensure_week_doc():
 def already_signed_in(username):
     week_start, _ = get_weekbounds()
     today = str(date.today())
-
-    doc = weekly_col.find_one(
-        {"week_start": week_start},
-        {f"logs.{today}.{username}": 1}
-    )
-
-    # Safely get the list of sessions for today
-    sessions = (
-        doc.get("logs", {})
-        .get(today, {})
-        .get(username, [])
-        if doc else []
-    )
-
-    # If the list is empty or the last entry has a sign_out, they are NOT signed in.
-    if not sessions or not isinstance(sessions, list):
-        return False
+    doc = weekly_col.find_one({"week_start": week_start})
     
-    last_session = sessions[-1]
-    return "sign_in" in last_session and "sign_out" not in last_session
-
+    # Get the list of sessions for today
+    user_logs = doc.get("logs", {}).get(today, {}).get(username, [])
+    
+    # Logic: Signed in if the latest session exists and has no sign_out
+    if isinstance(user_logs, list) and len(user_logs) > 0:
+        last_session = user_logs[-1]
+        return "sign_in" in last_session and "sign_out" not in last_session
+    return False
 
 def sign_in(username):
     week_start, _ = get_weekbounds()
     today = str(date.today())
-    new_entry = {"sign_in": datetime.now()}
-    
-    # Use $push to add a NEW pair to the list instead of overwriting
+    # $push adds a new entry to the list, allowing multiple per day
     weekly_col.update_one(
         {"week_start": week_start},
-        {"$push": {f"logs.{today}.{username}": new_entry}},
+        {"$push": {f"logs.{today}.{username}": {"sign_in": datetime.now()}}},
         upsert=True
     )
 
 def sign_out(username):
     week_start, _ = get_weekbounds()
     today = str(date.today())
-    
-    # Updates the last session in the list that doesn't have a sign_out yet
+    # Updates only the entry that doesn't have a sign_out yet
     weekly_col.update_one(
         {"week_start": week_start},
         {"$set": {f"logs.{today}.{username}.$[last].sign_out": datetime.now()}},
@@ -125,7 +113,7 @@ username = st.text_input("Username")
 if st.button("Sign In"):
     if not username:
         st.warning("Enter a valid username.")
-    elif not user_exists(username):           
+    elif not user_exists(username):            
         st.error("User not found in system.")
     elif already_signed_in(username):
         st.warning("You are already signed in!")
@@ -133,14 +121,13 @@ if st.button("Sign In"):
         sign_in(username)
         st.success("You are signed in.")
 
-
 if st.button("Sign Out"):
     if not username:
         st.warning("Enter a valid username.")
-    elif not user_exists(username):           
+    elif not user_exists(username):            
         st.error("User not found in system.")
     elif not already_signed_in(username):
-        st.warning("You are not signed in or already signed out.")
+        st.warning("You must sign in before you can sign out.")
     else:
         sign_out(username)
         st.success("You are signed out.")
