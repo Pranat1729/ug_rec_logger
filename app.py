@@ -69,13 +69,21 @@ def ensure_week_doc():
 def already_signed_in(username):
     week_start, _ = get_weekbounds()
     today = str(date.today())
+
     doc = weekly_col.find_one(
         {"week_start": week_start},
-        {f"logs.{today}.{username}.sign_in": 1}
+        {f"logs.{today}.{username}": 1}
     )
-    return bool(
-        doc and doc.get("logs", {}).get(today, {}).get(username, {}).get("sign_in")
+
+    record = (
+        doc.get("logs", {})
+        .get(today, {})
+        .get(username, {})
+        if doc else {}
     )
+
+    return bool(record.get("sign_in") and not record.get("sign_out"))
+
 
 def sign_in(username):
     week_start, _ = get_weekbounds()
@@ -127,6 +135,7 @@ st.caption(f"Device ID: {device_id}")
 
 st.markdown("------")
 st.markdown("If you have any trouble logging in or out, or would like to report any bugs. Reach out to the lead developer at: pranat32@gmail.com")
+
 
 
 
