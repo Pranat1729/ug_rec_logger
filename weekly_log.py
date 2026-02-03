@@ -11,13 +11,13 @@ import sys
 # CONFIGURATION (ENV VARIABLES)
 # ==========================
 try:
-MONGO_URI = os.environ["MONGO_URI"]
-GMAIL_USER = os.environ["GMAIL_USER"]
-GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
-RECIPIENT_EMAILS = [e.strip() for e in os.environ["RECIPIENT_EMAILS"].split(",")]
+    MONGO_URI = os.environ["MONGO_URI"]
+    GMAIL_USER = os.environ["GMAIL_USER"]
+    GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
+    RECIPIENT_EMAILS = [e.strip() for e in os.environ["RECIPIENT_EMAILS"].split(",")]
 except KeyError as e:
-print(f"Missing required environment variable: {e}")
-sys.exit(1)
+    print(f"Missing required environment variable: {e}")
+    sys.exit(1)
 
 DB_NAME = os.environ.get("DB_NAME", "infoDB")
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "Log_In")
@@ -28,12 +28,12 @@ COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "Log_In")
 print("Connecting to MongoDB...")
 
 try:
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-col = db[COLLECTION_NAME]
+    client = MongoClient(MONGO_URI)
+    db = client[DB_NAME]
+    col = db[COLLECTION_NAME]
 except Exception as e:
-print("MongoDB connection failed:", e)
-sys.exit(1)
+    print("MongoDB connection failed:", e)
+    sys.exit(1)
 
 # ==========================
 # FETCH LATEST LOG DOCUMENT
@@ -41,8 +41,8 @@ sys.exit(1)
 doc = col.find_one(sort=[("_id", -1)])
 
 if not doc or not doc.get("logs"):
-print("No logs found. Exiting.")
-sys.exit(0)
+    print("No logs found. Exiting.")
+    sys.exit(0)
 
 logs = doc["logs"]
 week_start = doc.get("week_start", min(logs.keys()))
@@ -59,15 +59,15 @@ lines.append(f"Week: {week_start} -> {week_end}")
 lines.append("")
 
 for day in sorted(logs.keys()):
-lines.append(f"{day}")
-users = logs[day]
+    lines.append(f"{day}")
+    users = logs[day]
 
-for user, t in users.items():
-sign_in = t.get("sign_in", "-")
-sign_out = t.get("sign_out", "-")
-lines.append(f" {user}: {sign_in} -> {sign_out}")
+    for user, t in users.items():
+        sign_in = t.get("sign_in", "-")
+        sign_out = t.get("sign_out", "-")
+        lines.append(f" {user}: {sign_in} -> {sign_out}")
 
-lines.append("")
+    lines.append("")
 
 text = "\n".join(lines)
 
@@ -78,7 +78,7 @@ doc_buffer = BytesIO()
 
 document = Document()
 for line in lines:
-document.add_paragraph(line)
+    document.add_paragraph(line)
 
 document.save(doc_buffer)
 doc_buffer.seek(0)
@@ -102,20 +102,20 @@ subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
 filename=f"weekly_report_{week_start}_to_{week_end}.docx"
 )
 
-#print("Sending email...")
+print("Sending email...")
 
 try:
-with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-server.send_message(msg)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+        server.send_message(msg)
 
-#print("Email sent successfully!")
+    print("Email sent successfully!")
 
 except Exception as e:
-print("Failed to send email:", e)
-sys.exit(1)
+    print("Failed to send email:", e)
+    sys.exit(1)
 
 # ==========================
 # DONE
 # ==========================
-#print(f"{datetime.now()}: Weekly report completed.")
+print(f"{datetime.now()}: Weekly report completed.")
