@@ -2,7 +2,7 @@ name: Weekly Attendance Email
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # runs every 3 minutes (change later if needed)
+    - cron: "15 17 * * 5"   # runs every 3 minutes (change later if needed)
   workflow_dispatch:
 
 jobs:
