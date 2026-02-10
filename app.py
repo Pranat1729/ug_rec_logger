@@ -13,6 +13,8 @@ cookies = EncryptedCookieManager(
     password=st.secrets["COOKIE_PASSWORD"] 
 )
 
+cookies.ready()
+
 if not cookies.ready():
     st.stop()
 
@@ -136,3 +138,4 @@ st.caption(f"Device ID: {device_id}")
 
 st.markdown("------")
 st.markdown("If you have any trouble logging in or out, or would like to report any bugs. Reach out to the lead developer at: pranat32@gmail.com")
+
