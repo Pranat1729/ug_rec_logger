@@ -37,7 +37,7 @@ users_col = db["users"]
 weekly_col = db["Log_In"]
 allowed_devices = db["allowed_devices"]
 
-# -------------------- USER CHECK --------------------
+# -------------------- Auser --------------------
 def user_exists(username):
     return bool(users_col.find_one({"username": username}))
 
@@ -64,7 +64,7 @@ if not is_device_allowed(device_id):
     st.code(device_id)
     st.stop()
 
-# -------------------- LOGGING LOGIC --------------------
+
 def get_weekbounds():
     today = today_date()
     start = today - timedelta(days=today.weekday())
@@ -148,3 +148,4 @@ if st.button("Sign Out"):
 st.caption(f"Device ID: {device_id}")
 st.markdown("------")
 st.markdown("If you have any trouble logging in or out, or would like to report any bugs. Reach out to the lead developer at: pranat32@gmail.com")
+
