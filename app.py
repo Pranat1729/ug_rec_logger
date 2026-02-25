@@ -1,19 +1,30 @@
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import uuid
 from streamlit_cookies_manager import EncryptedCookieManager
 
 pd.set_option('future.no_silent_downcasting', True)
 
+# -------------------- TIMEZONE --------------------
+TZ = ZoneInfo("America/New_York")
+
+def now():
+    return datetime.now(TZ)
+
+def today_date():
+    return now().date()
+
+def today_str():
+    return str(today_date())
+
 # -------------------- COOKIES --------------------
 cookies = EncryptedCookieManager(
     prefix="work_auth",
-    password=st.secrets["COOKIE_PASSWORD"] 
+    password=st.secrets["COOKIE_PASSWORD"]
 )
-
-cookies.ready()
 
 if not cookies.ready():
     st.stop()
@@ -22,13 +33,12 @@ if not cookies.ready():
 client = MongoClient(st.secrets["API_KEY"])
 db = client["infoDB"]
 
-users_col = db["users"]          
+users_col = db["users"]
 weekly_col = db["Log_In"]
 allowed_devices = db["allowed_devices"]
 
-# -------------------- NEW HELPER --------------------
+# -------------------- USER CHECK --------------------
 def user_exists(username):
-    """Check if username exists in users collection."""
     return bool(users_col.find_one({"username": username}))
 
 # -------------------- DEVICE AUTH --------------------
@@ -56,7 +66,7 @@ if not is_device_allowed(device_id):
 
 # -------------------- LOGGING LOGIC --------------------
 def get_weekbounds():
-    today = date.today()
+    today = today_date()
     start = today - timedelta(days=today.weekday())
     end = start + timedelta(days=6)
     return str(start), str(end)
@@ -72,37 +82,38 @@ def ensure_week_doc():
 
 def already_signed_in(username):
     week_start, _ = get_weekbounds()
-    today = str(date.today())
+    today = today_str()
+
     doc = weekly_col.find_one({"week_start": week_start})
-    
-    # Get the list of sessions for today
+    if not doc:
+        return False
+
     user_logs = doc.get("logs", {}).get(today, {}).get(username, [])
-    
-    # Logic: Signed in if the latest session exists and has no sign_out
+
     if isinstance(user_logs, list) and len(user_logs) > 0:
         last_session = user_logs[-1]
         return "sign_in" in last_session and "sign_out" not in last_session
+
     return False
 
 def sign_in(username):
     week_start, _ = get_weekbounds()
-    today = str(date.today())
-    # $push adds a new entry to the list, allowing multiple per day
+    today = today_str()
+
     weekly_col.update_one(
         {"week_start": week_start},
-        {"$push": {f"logs.{today}.{username}": {"sign_in": datetime.now()}}},
+        {"$push": {f"logs.{today}.{username}": {"sign_in": now()}}},
         upsert=True
     )
 
 def sign_out(username):
     week_start, _ = get_weekbounds()
-    today = str(date.today())
-    # Updates only the entry that doesn't have a sign_out yet
+    today = today_str()
+
     weekly_col.update_one(
         {"week_start": week_start},
-        {"$set": {f"logs.{today}.{username}.$[last].sign_out": datetime.now()}},
-        array_filters=[{"last.sign_out": {"$exists": False}}],
-        upsert=True
+        {"$set": {f"logs.{today}.{username}.$[last].sign_out": now()}},
+        array_filters=[{"last.sign_out": {"$exists": False}}]
     )
 
 ensure_week_doc()
@@ -115,7 +126,7 @@ username = st.text_input("Username")
 if st.button("Sign In"):
     if not username:
         st.warning("Enter a valid username.")
-    elif not user_exists(username):            
+    elif not user_exists(username):
         st.error("User not found in system.")
     elif already_signed_in(username):
         st.warning("You are already signed in!")
@@ -126,7 +137,7 @@ if st.button("Sign In"):
 if st.button("Sign Out"):
     if not username:
         st.warning("Enter a valid username.")
-    elif not user_exists(username):            
+    elif not user_exists(username):
         st.error("User not found in system.")
     elif not already_signed_in(username):
         st.warning("You must sign in before you can sign out.")
@@ -135,7 +146,5 @@ if st.button("Sign Out"):
         st.success("You are signed out.")
 
 st.caption(f"Device ID: {device_id}")
-
 st.markdown("------")
 st.markdown("If you have any trouble logging in or out, or would like to report any bugs. Reach out to the lead developer at: pranat32@gmail.com")
-
