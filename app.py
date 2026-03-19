@@ -11,6 +11,8 @@ import time
 import re
 import sys
 import subprocess
+import smtplib
+from email.message import EmailMessage
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 pd.set_option('future.no_silent_downcasting', True)
@@ -45,10 +47,8 @@ def get_real_mac():
         if sys.platform == "win32":
             output = subprocess.check_output("ipconfig /all", shell=True).decode(errors="ignore")
             lines  = output.splitlines()
-            real_macs = []
             for i, line in enumerate(lines):
                 if "Physical Address" in line:
-                    # Look back up to 10 lines for the adapter name
                     skip = False
                     for j in range(max(0, i - 10), i):
                         if any(kw in lines[j] for kw in (
@@ -58,12 +58,13 @@ def get_real_mac():
                             skip = True
                             break
                     if not skip:
-                        mac = re.search(r"([0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}"
-                                        r"[-:][0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2})", line)
+                        mac = re.search(
+                            r"([0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}"
+                            r"[-:][0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2}[-:][0-9A-Fa-f]{2})",
+                            line
+                        )
                         if mac:
-                            real_macs.append(mac.group().replace("-", ":").lower())
-            if real_macs:
-                return real_macs[0]
+                            return mac.group().replace("-", ":").lower()
 
         elif sys.platform == "darwin":
             output = subprocess.check_output(["ifconfig", "en0"]).decode()
@@ -72,7 +73,6 @@ def get_real_mac():
                 return mac.group(1)
 
         else:
-            # Linux
             output = subprocess.check_output(["ip", "link", "show"]).decode()
             macs = re.findall(r"link/ether\s+([0-9a-f:]{17})", output)
             if macs:
@@ -81,7 +81,6 @@ def get_real_mac():
     except Exception:
         pass
 
-    # Last resort fallback
     return hex(uuid.getnode())
 
 
@@ -115,10 +114,6 @@ ensure_agent_running()
 
 # -------------------- MAC AGENT CLIENT --------------------
 def get_device_mac():
-    """
-    Calls the local MAC agent on localhost.
-    Retries a few times to allow the thread to finish binding.
-    """
     for _ in range(5):
         try:
             r = requests.get(f"http://localhost:{AGENT_PORT}", timeout=1)
@@ -136,6 +131,27 @@ users_col       = db["users"]
 weekly_col      = db["Log_In"]
 allowed_devices = db["allowed_devices"]
 
+# -------------------- Email Notification --------------------
+def notify_admin_new_request(pc_name: str, mac: str):
+    """Fire an email to the dev when a new PC registration request comes in."""
+    try:
+        msg            = EmailMessage()
+        msg["Subject"] = f"New PC Registration Request: {pc_name}"
+        msg["From"]    = st.secrets["GMAIL_USER"]
+        msg["To"]      = "pranat32@gmail.com"
+        msg.set_content(
+            f"A new PC has requested access to the Workplace Time Logger.\n\n"
+            f"PC Name:     {pc_name}\n"
+            f"MAC Address: {mac}\n"
+            f"Requested:   {now().strftime('%Y-%m-%d %I:%M %p')}\n\n"
+            f"Log into the Admin Panel to approve or reject this request."
+        )
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(st.secrets["GMAIL_USER"], st.secrets["GMAIL_APP_PASSWORD"])
+            server.send_message(msg)
+    except Exception:
+        pass  # never crash the app if email fails
+
 # -------------------- Device Helpers --------------------
 def user_exists(username):
     return bool(users_col.find_one({"username": username}))
@@ -144,11 +160,9 @@ def is_device_allowed(mac: str) -> bool:
     return bool(allowed_devices.find_one({"device_id": mac, "active": True}))
 
 def is_admin(username: str, password: str) -> bool:
-    """Check admin credentials. User must have is_admin: True in the users collection."""
     user = users_col.find_one({"username": username, "is_admin": True})
     if not user:
         return False
-    # Plain comparison — swap for bcrypt if you store hashed passwords
     return user.get("password") == password
 
 def get_pending_devices():
@@ -173,7 +187,6 @@ def revoke_device(mac: str):
     )
 
 def register_device_request(mac: str, pc_name: str):
-    """Insert a pending registration if not already present."""
     existing = allowed_devices.find_one({"device_id": mac})
     if existing:
         return "already_exists"
@@ -336,6 +349,7 @@ elif page == "📋 Register This PC":
         else:
             result = register_device_request(device_mac, pc_name.strip())
             if result == "requested":
+                notify_admin_new_request(pc_name.strip(), device_mac)
                 st.success(
                     "✅ Request submitted! An admin will review it shortly. "
                     "Come back to this page to check your approval status."
