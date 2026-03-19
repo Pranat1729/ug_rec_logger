@@ -7,13 +7,12 @@ from docx import Document
 from io import BytesIO
 import sys
 
+
 def to_12hr(dt_obj):
     if dt_obj in ("-", None):
         return "-"
-
     if isinstance(dt_obj, datetime):
         return dt_obj.strftime("%I:%M %p")
-
     try:
         t = datetime.strptime(str(dt_obj), "%H:%M")
         return t.strftime("%I:%M %p")
@@ -21,38 +20,40 @@ def to_12hr(dt_obj):
         return str(dt_obj)
 
 
+# -------------------- ENV VARS --------------------
 try:
-    MONGO_URI = os.environ["MONGO_URI"]
-    GMAIL_USER = os.environ["GMAIL_USER"]
+    MONGO_URI          = os.environ["MONGO_URI"]
+    GMAIL_USER         = os.environ["GMAIL_USER"]
     GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
-    RECIPIENT_EMAILS = [e.strip() for e in os.environ["RECIPIENT_EMAILS"].split(",")]
+    RECIPIENT_EMAILS   = [e.strip() for e in os.environ["RECIPIENT_EMAILS"].split(",")]
 except KeyError as e:
     print(f"Missing required environment variable: {e}")
     sys.exit(1)
 
-DB_NAME = os.environ.get("DB_NAME", "infoDB")
+DB_NAME         = os.environ.get("DB_NAME", "infoDB")
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME", "Log_In")
 
+# -------------------- MongoDB --------------------
 try:
     client = MongoClient(MONGO_URI)
-    db = client[DB_NAME]
-    col = db[COLLECTION_NAME]
+    db     = client[DB_NAME]
+    col    = db[COLLECTION_NAME]
 except Exception as e:
     print("MongoDB connection failed:", e)
     sys.exit(1)
 
-
+# -------------------- Fetch latest week doc --------------------
 doc = col.find_one(sort=[("_id", -1)])
 
 if not doc or not doc.get("logs"):
     print("No logs found. Exiting.")
     sys.exit(0)
 
-logs = doc["logs"]
+logs       = doc["logs"]
 week_start = doc.get("week_start", "Unknown")
-week_end = doc.get("week_end", "Unknown")
+week_end   = doc.get("week_end", "Unknown")
 
-
+# -------------------- Build report lines --------------------
 lines = []
 lines.append("Weekly Attendance Report")
 lines.append(f"Week: {week_start} -> {week_end}")
@@ -61,24 +62,24 @@ lines.append("-" * 30)
 for day in sorted(logs.keys()):
     lines.append(f"\nDATE: {day}")
     users = logs[day]
-
     for user, sessions in users.items():
         if isinstance(sessions, list):
             for i, session in enumerate(sessions, 1):
-                sign_in = to_12hr(session.get("sign_in", "-"))
+                sign_in  = to_12hr(session.get("sign_in", "-"))
                 sign_out = to_12hr(session.get("sign_out", "-"))
                 lines.append(f"  {user} (Session {i}): {sign_in} -> {sign_out}")
         else:
-            sign_in = to_12hr(sessions.get("sign_in", "-"))
+            sign_in  = to_12hr(sessions.get("sign_in", "-"))
             sign_out = to_12hr(sessions.get("sign_out", "-"))
             lines.append(f"  {user}: {sign_in} -> {sign_out}")
 
 text = "\n".join(lines)
 
-
+# -------------------- Build .docx --------------------
 doc_buffer = BytesIO()
-document = Document()
-document.add_heading('Weekly Attendance Report', 0)
+document   = Document()
+
+document.add_heading("Weekly Attendance Report", 0)
 document.add_paragraph(f"Week: {week_start} to {week_end}")
 
 for line in lines[3:]:
@@ -87,14 +88,12 @@ for line in lines[3:]:
 document.save(doc_buffer)
 doc_buffer.seek(0)
 
-
-msg = EmailMessage()
+# -------------------- Build email --------------------
+msg            = EmailMessage()
 msg["Subject"] = f"Weekly Attendance Report ({week_start})"
-msg["From"] = GMAIL_USER
-msg["To"] = ", ".join(RECIPIENT_EMAILS)
-
+msg["From"]    = GMAIL_USER
+msg["To"]      = ", ".join(RECIPIENT_EMAILS)
 msg.set_content(text)
-
 msg.add_attachment(
     doc_buffer.read(),
     maintype="application",
@@ -102,23 +101,23 @@ msg.add_attachment(
     filename=f"weekly_report_{week_start}.docx"
 )
 
+# -------------------- Send & clean up --------------------
 try:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         server.send_message(msg)
-
     print("Email sent successfully.")
 
-    
-    today = date.today()
-    last_week_start = str(today - timedelta(days=today.weekday() + 7))
+    # Always resolves to the Monday of last week, regardless of what day cron fires
+    today            = date.today()
+    this_monday      = today - timedelta(days=today.weekday())   # Mon of current week
+    last_week_start  = str(this_monday - timedelta(days=7))      # Mon of previous week
 
     deleted = col.delete_one({"week_start": last_week_start})
-
     if deleted.deleted_count:
-        print(f"Deleted previous week starting {last_week_start}")
+        print(f"Deleted previous week doc: {last_week_start}")
     else:
-        print(f"No previous week found to delete ({last_week_start})")
+        print(f"No doc found to delete for week starting {last_week_start}")
 
 except Exception as e:
     print("Failed to send email:", e)
